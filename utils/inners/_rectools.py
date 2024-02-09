@@ -1,10 +1,8 @@
-from scipy.sparse import csr_matrix
-
 import pandas as pd
-
 import typing
 
 if typing.TYPE_CHECKING:
+    from scipy.sparse import coo_matrix
     from rectools.metrics.base import Catalog, MetricAtK
 
 
@@ -17,7 +15,7 @@ def _validate_metric_kwargs(target: typing.Type['MetricAtK'], **kwargs) -> typin
 
 
 def compute_rectools_metrics(
-        rank_matrix: 'csr_matrix',
+        rank_matrix: 'coo_matrix',
         uid_map: dict,
         iid_map: dict,
         eval_metrics: typing.Iterable[typing.Type['MetricAtK']],

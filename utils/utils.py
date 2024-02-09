@@ -3,94 +3,106 @@ import polars as pl
 import numpy as np
 import xgboost as xgb
 
+import os
 import pymysql
+import typing
+import lightfm
 import lightfm.data
 import dataclasses
-import os
 
 from .inners._data import Data
 from .inners._sklearn import SklearnEstimatorLightFM
 
+from rectools.metrics import Recall
+from rectools.columns import Columns
+from rectools.models.base import ModelBase
+from rectools.metrics.base import MetricAtK
 
-ENDPOINT = "apollo-api-staging-f82be878-d243-4113-8052-ef36565618e0.cpljy7lbflfq.eu-west-1.rds.amazonaws.com"
-PORT = 3306
-USER = "admin"
-PASSWORD = 'zsfZMSpS0SGz8gp203QJ4r3bqpVNxwmG'
-DBNAME = "vapor"
+if typing.TYPE_CHECKING:
+    from rectools.dataset import Dataset
 
-metadata_columns = ['title', 'year', 'rank', 'mppa', 'genres', 'company', 'director', 'writer', 'cast']
-conn: pymysql.Connection
 
+conn: typing.Union[pymysql.Connection, None] = None
 
 def get_db_engine():
     global conn
-    if not conn:
-        conn = pymysql.connect(host=ENDPOINT, user=USER, passwd=PASSWORD, port=PORT, database=DBNAME)
+
+    if conn is None:
+        conn = pymysql.connect(
+            host=os.environ['DB_ENDPOINT'],
+            user=os.environ['DB_USER'],
+            passwd=os.environ['DB_PASSWORD'],
+            port=int(os.environ['DB_PORT']),
+            database=os.environ['DB_NAME']
+        )
+    
     return conn
 
 
-def light_fm_predict_user(
-        model: lightfm.LightFM,
-        data: Data,
-        lightfm_data: Data.LightFM_Dataset,
-        user: int,
-        n: int = 10
+def rectools_predict_user(
+    dataset: 'Dataset',
+    model: ModelBase,
+    user: int,
+    n: int = 10
 ):
-    int_user = lightfm_data.mapping.ext_uid2int_uid[user]
-    items = data.test_interactions['item_id'].drop_duplicates().apply(
-        lightfm_data.mapping.ext_iid2int_iid.__getitem__).values
+    return model.recommend((user,), dataset, k=n, filter_viewed=False, add_rank_col=True)[Columns.Item].values
+
+
+def light_fm_predict_user(
+    dataset: Data.LightFM_Dataset,
+    model: typing.Union[lightfm.LightFM, SklearnEstimatorLightFM],
+    user: int,
+    n: int = 10
+):
+    int_user = dataset.mapping.ext_uid2int_uid[user]
+    pred_method = model.predict if isinstance(model, lightfm.LightFM) else model._predict  
+
+    items = dataset.test_interactions['item_id'].drop_duplicates().apply(dataset.mapping.ext_iid2int_iid.__getitem__).values
     users = np.repeat(int_user, len(items))
 
-    if isinstance(model, lightfm.LightFM):
-        score = model.predict(
-            users,
-            items,
-            item_features=lightfm_data.item_features,
-            user_features=lightfm_data.user_features,
-            num_threads=12
-        )
-    elif isinstance(model, SklearnEstimatorLightFM):
-        score = model._predict(
-            users,
-            items,
-            item_features=lightfm_data.item_features,
-            user_features=lightfm_data.user_features,
-            num_threads=12
-        )
-    else:
-        raise ValueError()
+    score = pred_method(
+        users,
+        items,
+        item_features=dataset.item_features,
+        user_features=dataset.user_features,
+        num_threads=12
+    )
 
-    return [lightfm_data.mapping.int_iid2ext_iid[i] for i in
-            sorted(items, key=dict(zip(items, score)).__getitem__, reverse=True)[:n]]
+    out_items = sorted(items, key=dict(zip(items, score)).__getitem__, reverse=True)[:n]
+
+    return [dataset.mapping.int_iid2ext_iid[i] for i in out_items]
 
 
 def xgboost_predict_user(
-        fs_model: lightfm.LightFM,
-        ss_model: xgb.XGBRanker,
-        light_fm_data: 'Data.LightFM_Dataset',
-        data: 'Data',
-        user: int,
-        n: int = 10
+    data: Data,
+    mapper: Data.LightFM_DatasetMapping,
+    first_stage_model: typing.Union[lightfm.LightFM, SklearnEstimatorLightFM],
+    second_stage_model: xgb.XGBRanker,
+    user: int,
+    n: int = 10
 ):
+    pred_method = first_stage_model.predict if isinstance(first_stage_model, lightfm.LightFM) else first_stage_model._predict
+    
     items = data.test_interactions['item_id'].drop_duplicates().values
     users = np.repeat(user, len(items))
-    score = fs_model.predict(
-        [light_fm_data.mapping.ext_uid2int_uid[u] for u in users],
-        [light_fm_data.mapping.ext_iid2int_iid[i] for i in items],
+    score = pred_method(
+        [mapper.ext_uid2int_uid[u] for u in users],
+        [mapper.ext_iid2int_iid[i] for i in items],
         num_threads=12
     )
 
     df = pd.DataFrame({'user_id': users, 'item_id': items, 'score': score})
     df = data.set_xgboost_features(df).rename(columns={'user_id': 'qid'}).drop(columns=['item_id'])[
-        ss_model.feature_names_in_]
-    ss_score = ss_model.predict(df)
+        second_stage_model.feature_names_in_
+    ]
+    second_stage_score = second_stage_model.predict(df)
 
-    return sorted(items, key=dict(zip(items, ss_score)).__getitem__, reverse=True)[:n]
+    return sorted(items, key=dict(zip(items, second_stage_score)).__getitem__, reverse=True)[:n]
 
 
 def genres_report(preds_for_genre_lambda):
-    item_id2title = pd.read_csv('../static_mappers/item_id2title.csv').set_index('item_id', drop=True)['title']
-    meta_data = pd.read_csv('../static_mappers/item_id2meta.csv')
+    item_id2title = pd.read_csv(os.path.join(os.environ['DIR'], '/static_mappers/item_id2title.csv')).set_index('item_id', drop=True)['title']
+    meta_data = pd.read_csv(os.path.join(os.environ['DIR'], '/static_mappers/item_id2meta.csv'))
     report = pd.DataFrame(columns=['genre', 'user_id', 'profile_number', 'n', 'title', 'genres'])
 
     for g in ['Drama', 'Comedy', 'Thriller', 'Romance', 'Action', 'Adventure', 'Fantasy', 'Sci-Fi', 'Horror', 'Family',
@@ -107,7 +119,7 @@ def genres_report(preds_for_genre_lambda):
 
         report = pd.concat([report, data], ignore_index=True)
 
-    report.to_csv('data/report.csv', index=False)
+    report.to_csv(os.path.join(os.environ['DIR'], 'reports/report.csv'), index=False)
 
     return report
 
@@ -119,20 +131,25 @@ class _CachedUsers:
 
 
 def get_users_for_test(
-        interactions_df: pd.DataFrame,
-        n_users: int = 10,
-        min_n_interactions: int = 10,
-        max_n_interactions: int = 50,
-        sort_histories: bool = True,
-        top_n_hist: int = 10
+    interactions_df: pd.DataFrame,
+    n_users: int = 10,
+    min_n_interactions: int = None,
+    max_n_interactions: int = None,
+    sort_histories: bool = True,
+    top_n_hist: int = 10
 ) -> _CachedUsers:
     if 'timestamp' not in interactions_df.columns:
         sort_histories = False
 
     counts = interactions_df['user_id'].value_counts()
-    users = counts[(counts.values >= min_n_interactions) & (counts.values <= max_n_interactions)].index
-    users = np.random.choice(users, n_users)
 
+    if min_n_interactions:
+        users = counts[counts.values >= min_n_interactions].index
+    
+    if max_n_interactions:
+        users = counts[counts.values <= max_n_interactions].index
+    
+    users = np.random.choice(users, n_users)
     users_data = interactions_df.groupby('user_id')
 
     _users = []
@@ -150,54 +167,75 @@ def get_users_for_test(
     return _CachedUsers(_users, _hists)
 
 
-def users_report(model: lightfm.LightFM, users: _CachedUsers, n_items: int, light_fm_data: 'Data.LightFM_Dataset',
-                 _data: 'Data', postfix: str = '', _dir: str = ''):
-    item_id2title = pd.read_csv('../static_mappers/item_id2title.csv').set_index('item_id', drop=True)['title']
-    meta_data = pd.read_csv('../static_mappers/item_id2meta.csv')
+def users_report(
+    dataset: typing.Union[Data.LightFM_Dataset, 'Dataset'],
+    model: typing.Union[lightfm.LightFM, SklearnEstimatorLightFM, 'ModelBase'],
+    users: _CachedUsers,
+    n_items: int = 10,
+    postfix: str = None, 
+    report_dir: str = None
+):
+    if isinstance(model, lightfm.LightFM):
+        pred_method = light_fm_predict_user
+    elif isinstance(model, SklearnEstimatorLightFM):
+        pred_method = light_fm_predict_user
+    elif issubclass(model.__class__, ModelBase):
+        pred_method = rectools_predict_user
+    else:
+        raise ValueError()
 
-    report = pd.DataFrame(
-        columns=['user_id', 'hist_item_id', 'hist_title', 'hist_genres', 'pred_item_id', 'pred_title', 'pred_genres'])
+
+    def _pad_items(_items):
+        if len(_items) < n_items:
+            _items = list(_items) + ['' for _ in range(n_items - len(_items))]
+        return _items
+
+    item_id2title = pd.read_csv(os.path.join(os.environ['DIR'], 'static_mappers/item_id2title.csv')).set_index('item_id', drop=True)['title']
+    item_id2genres = pd.read_csv(os.path.join(os.environ['DIR'], 'static_mappers/item_id2meta.csv'))[['item_id', 'genres']].set_index('item_id', drop=True)['genres']
+    report = pd.DataFrame(columns=['user_id', 'hist_item_id', 'hist_title', 'hist_genres', 'pred_item_id', 'pred_title', 'pred_genres'])
 
     for u in users.users_idx:
-        data = pd.DataFrame()
-        data['user_id'] = [u for _ in range(n_items)]
-        data.loc[data.index > 0, 'user_id'] = ''
+        user_data = pd.DataFrame()
+        user_data['user_id'] = [u for _ in range(n_items)]
+        user_data.loc[user_data.index > 0, 'user_id'] = ''
 
-        data['hist_item_id'] = users.users_histories[u]
-        data['hist_title'] = data['hist_item_id'].apply(lambda x: item_id2title.get(x, 'None'))
-        data['hist_genres'] = data['hist_item_id'].apply(
-            lambda x: meta_data[meta_data['item_id'] == x]['genres'].values[0])
+        user_data['hist_item_id'] = _pad_items(users.users_histories[u])
+        user_data['hist_title'] = user_data['hist_item_id'].apply(lambda x: item_id2title.get(x, ''))
+        user_data['hist_genres'] = user_data['hist_item_id'].apply(lambda x: item_id2genres.get(x, ''))
 
-        data['pred_item_id'] = light_fm_predict_user(model, _data, light_fm_data, u, n_items)
-        data['pred_title'] = data['pred_item_id'].apply(lambda x: item_id2title.get(x, 'None'))
-        data['pred_genres'] = data['pred_item_id'].apply(
-            lambda x: meta_data[meta_data['item_id'] == x]['genres'].values[0])
+        user_data['pred_item_id'] = _pad_items(pred_method(dataset=dataset, model=model, user=u, n=n_items))
+        user_data['pred_title'] = user_data['pred_item_id'].apply(lambda x: item_id2title.get(x, ''))
+        user_data['pred_genres'] = user_data['pred_item_id'].apply(lambda x: item_id2genres.get(x, ''))
 
-        report = pd.concat([report, data], ignore_index=True)
+        report = pd.concat([report, user_data], ignore_index=True)
 
-    _path = f'report{postfix}.csv' if _dir == '' else os.path.join(_dir, f'report{postfix}.csv')
-    report.to_csv(_path, index=False)
+    p = f'report_{postfix}.csv' if postfix else f'report.csv'
+    p = os.path.join(report_dir, p) if report_dir else p
+    report.to_csv(p, index=False)
 
     return report
 
 
-class PopIntersect:
-    def _get_pops_from_df(self, df: pd.DataFrame):
-        counts = df['item_id'].value_counts()
-        return counts.index[:self.k]
+class PopularIntersect(MetricAtK):
+    def calc(self, reco: pd.DataFrame, prev_interactions: pd.DataFrame):
+        pop_recos = set(prev_interactions['item_id'].value_counts().head(self.k).index)
+        user_values = reco.groupby('user_id', group_keys=False).apply(lambda g: 1 - (len(set(g['item_id'].values) - pop_recos) / self.k))
+        
+        return user_values.mean()
 
-    def __init__(self, k: int):
-        """
-        Parameters
-        ----------
-            k :
-                num of top popular and top predicted items between which will be computed intersection 
-        """
-        self.k = k
 
-    def calc(self, reco: pd.DataFrame, train_data: pd.DataFrame):
-        pop_items = self._get_pops_from_df(train_data)
-        user_groups = reco.groupby('user_id')
-        user_groups = user_groups.apply(lambda g: g[g['rank'] <= self.k])
-        user_pop_inters = user_groups.apply(lambda g: sum([i in g['item_id'] for i in pop_items]) / len(g))
-        return user_pop_inters.mean()
+class RecallNoPop(Recall):
+    def calc(self, reco: pd.DataFrame, interactions: pd.DataFrame, prev_interactions: pd.DataFrame):
+        pop_recos = set(prev_interactions['item_id'].value_counts().head(self.k).index)
+
+        no_pop_test_interactions = interactions[~interactions['item_id'].isin(pop_recos)]
+        no_pop_reco = reco.merge(
+            no_pop_test_interactions[["user_id"]].drop_duplicates(),
+            on="user_id",
+            how="inner",
+        )
+
+        return super().calc(
+            reco=no_pop_reco,
+            interactions=no_pop_test_interactions,
+        )

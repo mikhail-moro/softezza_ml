@@ -2,14 +2,23 @@ import pandas as pd
 import polars as pl
 import numpy as np
 
-from collections.abc import Iterable
-
-import typing
 import lightfm.data
 import collections
 import dataclasses
+import rectools
+import typing
 import enum
 import abc
+import os
+
+from collections.abc import Iterable
+from rectools.dataset import Dataset
+from rectools.dataset.identifiers import IdMap
+from rectools.dataset.interactions import Interactions
+
+if typing.TYPE_CHECKING:
+    from scipy.sparse import coo_matrix
+
 
 
 class Experiment(enum.Enum):
@@ -20,8 +29,7 @@ class Experiment(enum.Enum):
 class Data:
     LightFM_Dataset = collections.namedtuple(
         'LightFM_Dataset',
-        ['train_interactions', 'test_interactions', 'user_features', 'item_features', 'weights', 'lightfm_dataset',
-         'mapping']
+        ['train_interactions', 'test_interactions', 'user_features', 'item_features', 'weights', 'lightfm_dataset', 'mapping']
     )
     LightFM_DatasetMapping = collections.namedtuple(
         'LightFM_DatasetMapping',
@@ -71,19 +79,23 @@ class Data:
 
     def get_lightfm_features(
             self,
-            drop_features: list,
-            list_values_columns: list,
-            scalar_values_columns: list
-    ):
+            drop_features: list = None,
+            list_values_columns: list = None,
+            scalar_values_columns: list = None
+    ) -> 'coo_matrix':
+        drop_features = drop_features if drop_features is not None else []
+        list_values_columns = list_values_columns if list_values_columns is not None else []
+        scalar_values_columns = scalar_values_columns if scalar_values_columns is not None else []
+
         def _parse_feature_names(column: str, _data: pd.DataFrame):
+            
             if column in drop_features:
                 return []
             if column in scalar_values_columns:
                 return [column]
             if column in list_values_columns:
-                return [f"{column}_{_}" for _ in np.unique(np.concatenate(_data[column].values))]
-
-            return [f"{column}_{_}" for _ in np.unique(_data[column].values)]
+                return [f"{column}_{_}" for _ in set(np.concatenate(_data[column].values))]
+            return [f"{column}_{_}" for _ in set(_data[column].values)]
 
         ufeatures = self.user_features.copy()
         ifeatures = self.item_features.copy()
@@ -118,8 +130,10 @@ class Data:
 
             return out
 
-        return collections.namedtuple('LightFM_Features',
-                                      ['user_features', 'item_features', 'user_labels', 'item_labels'])(
+        return collections.namedtuple(
+            'LightFM_Features',
+            ['user_features', 'item_features', 'user_labels', 'item_labels']
+        ) (
             user_features=tuple([(i, _parse_feature_row(r)) for i, r in user_features.iterrows()]),
             item_features=tuple([(i, _parse_feature_row(r)) for i, r in item_features.iterrows()]),
             user_labels=user_labels,
@@ -129,19 +143,52 @@ class Data:
     def set_xgboost_features(
             self,
             interactions: pd.DataFrame
-    ):
+    ) -> pd.DataFrame:
         interactions = pd.merge(interactions, self.user_features, on='user_id', how='inner')
         interactions = pd.merge(interactions, self.item_features, on='item_id', how='inner')
 
         return interactions
+    
+    def get_rectools_dataset(
+        self,
+        #TODO add features
+    ) -> typing.Tuple[Dataset, Dataset]:
+        train = self.train_interactions.rename(columns={
+            'user_id': rectools.Columns.User,
+            'item_id': rectools.Columns.Item,
+            'weight': rectools.Columns.Weight,
+            'timestamp': rectools.Columns.Datetime
+        })
+
+        test = self.test_interactions.rename(columns={
+            'user_id': rectools.Columns.User,
+            'item_id': rectools.Columns.Item,
+            'weight': rectools.Columns.Weight,
+            'timestamp': rectools.Columns.Datetime
+        })
+
+        user_id_map=IdMap.from_values(np.concatenate([train[rectools.Columns.User].values, test[rectools.Columns.User].values]))
+        item_id_map=IdMap.from_values(np.concatenate([train[rectools.Columns.Item].values, test[rectools.Columns.Item].values]))
+
+        train_dataset = Dataset(
+            user_id_map, item_id_map,
+            interactions=Interactions.from_raw(train, user_id_map, item_id_map)
+        )
+
+        test_dataset = Dataset(
+            user_id_map, item_id_map,
+            interactions=Interactions.from_raw(test, user_id_map, item_id_map)
+        )
+
+        return train_dataset, test_dataset
 
     def get_lightfm_dataset(
-            self,
-            with_features: bool = True,
-            drop_features: list = None,
-            list_values_columns: list = None,
-            scalar_values_columns: list = None
-    ):
+        self,
+        with_features: bool = True,
+        drop_features: list = None,
+        list_values_columns: list = None,
+        scalar_values_columns: list = None
+    ) -> lightfm.data.Dataset:
         if with_features:
             features = self.get_lightfm_features(drop_features, list_values_columns, scalar_values_columns)
         else:
@@ -184,6 +231,7 @@ class Data:
             item_features=item_features if item_features else None,
             weights=weights,
             lightfm_dataset=lightfm_dataset,
+            
             mapping=self.LightFM_DatasetMapping(
                 ext_uid2int_uid=ext_uid2int_uid,
                 int_uid2ext_uid=int_uid2ext_uid,
@@ -201,10 +249,19 @@ class Data:
         del self.all_items
 
 
+
+# Filters
+
+
 class FilterStrategy(abc.ABC):
     @abc.abstractmethod
     def filter(self, data: pl.DataFrame) -> pl.DataFrame:
         raise NotImplementedError()
+
+
+class NoFilter(FilterStrategy):
+    def filter(self, data: pl.DataFrame) -> pl.DataFrame:
+        return data
 
 
 @dataclasses.dataclass
@@ -236,21 +293,25 @@ class OnlyLastInteractionsFilter(FilterStrategy):
         return data
 
 
-class NoFilter(FilterStrategy):
-    def filter(self, data: pl.DataFrame) -> pl.DataFrame:
-        return data
+
+# Splitters
 
 
 class SplitStrategy(abc.ABC):
 
     @abc.abstractmethod
-    def split(self, data: pl.DataFrame) -> tuple:
+    def split(self, data: pl.DataFrame) -> typing.Tuple[pl.DataFrame, ...]:
         raise NotImplementedError()
+
+
+class NoSplit(SplitStrategy):
+    def split(self, data: pl.DataFrame) -> typing.Tuple[pl.DataFrame,]:
+        return data, pl.DataFrame(schema=data.schema), pl.DataFrame(schema=data.schema)
 
 
 @dataclasses.dataclass
 class TimeSortSplit(SplitStrategy):
-    num_interactions: int or str
+    num_interactions: typing.Union[int, typing.Literal['all']]
     first_stage_train_split: float
     second_stage_train_split: float
     test_split: float
@@ -283,7 +344,7 @@ class TimeSortSplit(SplitStrategy):
 
 @dataclasses.dataclass
 class RandomSplit(SplitStrategy):
-    num_interactions: int or str
+    num_interactions: typing.Union[int, typing.Literal['all']]
     first_stage_train_split: float
     second_stage_train_split: float
     test_split: float
@@ -314,10 +375,7 @@ class RandomSplit(SplitStrategy):
         return train_1, train_2, test
 
 
-class NoSplit(SplitStrategy):
-    def split(self, data: pl.DataFrame) -> tuple:
-        return tuple([data])
-
+# Config
 
 @dataclasses.dataclass
 class DataConfig:
@@ -348,28 +406,11 @@ class DataConfig:
         If `True` - combine weight matrix with popular penalty matrix
     """
     experiment: Experiment = Experiment.LIGHT_FM
-    split_strategy: SplitStrategy = NoSplit
-    filter_strategy: typing.Union[FilterStrategy, typing.Iterable[FilterStrategy]] = NoFilter
+    split_strategy: SplitStrategy = NoSplit()
+    filter_strategy: typing.Union[FilterStrategy, typing.Iterable[FilterStrategy]] = NoFilter()
 
     concat_stages: bool = True
     use_popular_penalty: bool = False
-
-
-# Default configs
-LightFM_DataConfig = DataConfig(
-    experiment=Experiment.LIGHT_FM,
-    split_strategy=RandomSplit('all', 0.6, 0.2, 0.2),
-    filter_strategy=MinNumInteractionsFilter(50, 100),
-    concat_stages=True,
-    use_popular_penalty=False
-)
-XGBoost_DataConfig = DataConfig(
-    experiment=Experiment.XGBOOST,
-    split_strategy=RandomSplit('all', 0.6, 0.2, 0.2),
-    filter_strategy=MinNumInteractionsFilter(50, 100),
-    concat_stages=True,
-    use_popular_penalty=False
-)
 
 
 def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
@@ -378,7 +419,7 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
     """
 
     interactions = pl.read_csv(
-        'data/history_with_dt.csv',
+        os.path.join(os.environ['DIR'], 'data/interactions.csv'),
         try_parse_dates=True,
         schema={'user_id': pl.Int64, 'item_id': pl.String, 'timestamp': pl.Datetime, 'weight': pl.Float64}
     )
@@ -393,7 +434,7 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
 
     if config.experiment == Experiment.LIGHT_FM:
         item_features = pl.read_csv(
-            '/home/ml/ml_proj/features/item_features.csv',
+            os.path.join(os.environ['DIR'], 'data/item_features.csv'),
             dtypes={
                 'item_id': pl.String,
                 'rank': pl.String,
@@ -404,19 +445,16 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
             }
         )
         user_features = pl.read_csv(
-            '/home/ml/ml_proj/features/user_features.csv',
+            os.path.join(os.environ['DIR'], 'data/user_features.csv'),
             columns=['user_id', 'device', 'account_type', 'lifetime']
         )
-        parse_genres = lambda genres: genres.replace('"', '').replace("'", '').replace(']', '').replace('[',
-                                                                                                        '').replace(' ',
-                                                                                                                    '').split(
-            ',')
+        parse_genres = lambda genres: genres.replace('"', '').replace("'", '').replace(']', '').replace('[','').replace(' ','').split(',')
         item_features = item_features.with_columns(
             genres=item_features['genres'].map_elements(parse_genres)
         )
     else:
-        item_features = pl.read_csv('/home/ml/ml_proj/features/item_features_bin.csv')
-        user_features = pl.read_csv('/home/ml/ml_proj/features/user_features_bin.csv')
+        item_features = pl.read_csv(os.path.join(os.environ['DIR'], 'data/item_features_bin.csv'))
+        user_features = pl.read_csv(os.path.join(os.environ['DIR'], 'data/user_features_bin.csv'))
 
     item_features = item_features.drop_nulls()
     user_features = user_features.drop_nulls()
@@ -441,13 +479,11 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
 
         if config.use_popular_penalty:
             max_views_q95 = train['item_id'].value_counts().quantile(0.95)
-            train['penalty'] = np.clip((train['item_id'].apply(item_id2num_inters.__getitem__) / max_views_q95).values,
-                                       0, 1)
+            train['penalty'] = np.clip((train['item_id'].apply(item_id2num_inters.__getitem__) / max_views_q95).values, 0, 1)
             train['penalty'] = train['penalty'].apply(lambda x: 1 - x)
 
             train['weight'] = train['weight'] * train['penalty']
-            train['weight'] = (train['weight'] - train['weight'].min()) / (
-                        train['weight'].max() - train['weight'].min())
+            train['weight'] = (train['weight'] - train['weight'].min()) / (train['weight'].max() - train['weight'].min())
 
             train = train.drop(columns='penalty')
 
@@ -456,8 +492,10 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
         if verbose_lens:
             print(
                 "Data after filter:\n" +
-                f"Len of train interactions with period [{train.iloc[-1]['timestamp']} / {train.iloc[0]['timestamp']}] - {len(train)}\n" +
-                f"Len of test interactions with period [{test.iloc[-1]['timestamp']} / {test.iloc[0]['timestamp']}] - {len(test)}"
+                f"Len of train interactions with period [{train.tail(1)['timestamp'].values} / {train.head(1)['timestamp'].values}] - {len(train)}\n" +
+                f"Len of test interactions with period [{test.tail(1)['timestamp'].values} / {test.head(1)['timestamp'].values}] - {len(test)}\n" +
+                f"Num of uniq users {len(all_users)}" + 
+                f"Num of uniq items {len(all_items)}" 
             )
 
         data = Data(
@@ -474,8 +512,7 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
             max_views_q95 = train_1['item_id'].value_counts().quantile(0.95)
             pop_penalty = train_1['item_id'].apply(lambda x: 1 - np.clip(item_id2num_inters[x] / max_views_q95, 0, 1))
             train_1['weight'] = train_1['weight'] * pop_penalty
-            train_1['weight'] = (train_1['weight'] - train_1['weight'].min()) / (
-                        train_1['weight'].max() - train_1['weight'].min())
+            train_1['weight'] = (train_1['weight'] - train_1['weight'].min()) / (train_1['weight'].max() - train_1['weight'].min())
 
         train_1['weight'] = np.clip(train_1['weight'].values, a_min=0.01, a_max=0.99)
         train_2['weight'] = np.clip(train_2['weight'].values, a_min=0.01, a_max=0.99)
@@ -483,9 +520,9 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
         if verbose_lens:
             print(
                 "Data after filter:\n" +
-                f"Len of first stage train interactions with period [{train_1.iloc[-1]['timestamp']} / {train_1.iloc[0]['timestamp']}] - {len(train_1)}\n" +
-                f"Len of second stage train interactions with period [{train_2.iloc[-1]['timestamp']} / {train_2.iloc[0]['timestamp']}] - {len(train_2)}\n" +
-                f"Len of test interactions with period [{test.iloc[-1]['timestamp']} / {test.iloc[0]['timestamp']}] - {len(test)}"
+                f"Len of train_1 interactions with period [{train_1.tail(1)['timestamp'].values} / {train_1.head(1)['timestamp'].values}] - {len(train_1)}\n" +
+                f"Len of train_2 interactions with period [{train_2.tail(1)['timestamp'].values} / {train_2.head(1)['timestamp'].values}] - {len(train_2)}\n" +
+                f"Len of test interactions with period [{test.tail(1)['timestamp'].values} / {test.head(1)['timestamp'].values}] - {len(test)}"
             )
 
         data = Data(

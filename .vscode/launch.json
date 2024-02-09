@@ -1,0 +1,24 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "python": "${command:python.interpreterPath}",
+            "env": {
+                "DIR": "/home/ml/softezza_ml/",
+                "DB_ENDPOINT": "apollo-api-staging-f82be878-d243-4113-8052-ef36565618e0.cpljy7lbflfq.eu-west-1.rds.amazonaws.com",
+                "DB_PORT": "3306",
+                "DB_USER": "admin",
+                "DB_PASSWORD": "zsfZMSpS0SGz8gp203QJ4r3bqpVNxwmG",
+                "DB_NAME": "vapor"
+            }
+        }
+    ] 
+}
