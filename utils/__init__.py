@@ -9,57 +9,70 @@ from .inners._sklearn import (
 from .inners._data import (
     Data,
     DataConfig,
-    load_data,
+    
     NoFilter,
     MinNumInteractionsFilter,
     OnlyLastInteractionsFilter,
+    
     NoSplit,
     RandomSplit,
     TimeSortSplit,
-    Experiment
+    
+    NoWeight,
+    NumViewsBasedWeight,
+    ViewTimeBasedWeight,
+    ViewRatioBasedWeight,
+
+    FeaturesConfig,
+    
+    load_data
 )
 
 from .inners._rectools import compute_rectools_metrics
 
-from .utils import (
+from .utils import (    
+    PopularIntersect,
+    RecallNoPop,
+
     genres_report,
     users_report,
     get_db_engine,
     get_users_for_test,
     light_fm_predict_user,
-    xgboost_predict_user,
-    
-    PopularIntersect,
-    RecallNoPop
+    xgboost_predict_user
 )
 
 
 
-import typing
 import sklearn.model_selection
 import rectools.metrics
 
 
 LightFM_Config = DataConfig(
-    experiment=Experiment.LIGHT_FM,
-    split_strategy=TimeSortSplit('all', .6, .2, .2),
+    split_strategy=TimeSortSplit(num_interactions='all', splits=(.8, .2)),
     filter_strategy=[
         MinNumInteractionsFilter(20, 500),
         OnlyLastInteractionsFilter('user_id', 20)
     ],
-    concat_stages=True,
-    use_popular_penalty=False
+    features_config=FeaturesConfig(use_labels=True)
+)
+
+RecTools_Config = DataConfig(
+    split_strategy=TimeSortSplit(num_interactions='all', splits=(.8, .2)),
+    filter_strategy=[
+        MinNumInteractionsFilter(20, 500),
+        OnlyLastInteractionsFilter('user_id', 20)
+    ],
+    features_config=FeaturesConfig(use_labels=False)
 )
 
 XGBoost_Config = DataConfig(
-    experiment=Experiment.XGBOOST,
-    split_strategy=TimeSortSplit('all', .6, .2, .2),
+    split_strategy=TimeSortSplit(num_interactions='all', splits=(.6, .2, .2)),
     filter_strategy=[
         MinNumInteractionsFilter(20, 500),
         OnlyLastInteractionsFilter('user_id', 20)
     ],
-    concat_stages=False,
-    use_popular_penalty=False
+    features_config=FeaturesConfig(use_labels=False)
 )
 
 

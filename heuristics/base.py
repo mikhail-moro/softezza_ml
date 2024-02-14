@@ -4,7 +4,7 @@ import pandas as pd
 
 
 class Heuristic(abc.ABC):
-    fitted: bool = False
+    __fitted: bool = False
     name: str = '__base__'
 
     @abc.abstractmethod

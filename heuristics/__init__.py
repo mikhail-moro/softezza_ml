@@ -1,26 +1,22 @@
 from .base import Heuristic
 from .cosine import Cosine
-
+from .simple import ScalarScaleDistanse, ScalarModuleDistanse
 
 import pandas as pd
 import typing
 
 
-class HeuristicsWrapper:
-    _heuristic_name2data: typing.Dict[str, typing.Tuple[Heuristic, float]]
+class HueristicsWrapper:
+    _hueristic_name2data: typing.Dict[str, typing.Tuple[Heuristic, float]]
     
-    def __init__(self, **heuristic_weight: typing.Tuple[Heuristic, float]):
-        assert len(heuristic_weight) > 0
-
-        for h in heuristic_weight:
-            assert heuristic_weight[h][0].fitted, 'Fit model before make predictions'
-
-        self._heuristic_name2data = heuristic_weight
+    def __init__(self, **hueristic_weight: typing.Tuple[Heuristic, float]):
+        assert len(hueristic_weight) > 0
+        self._hueristic_name2data = hueristic_weight
 
     def rerank(self, k:int,  reco: pd.DataFrame):
         reco['norm_score'] = self._norm_coll(reco['score'])
 
-        for hueristic_name, hueristic_data in self._heuristic_name2data.items():
+        for hueristic_name, hueristic_data in self._hueristic_name2data.items():
             reco[f"{hueristic_name}_norm_score"] = self._norm_coll(hueristic_data[0].predict(reco['user_id'], reco['item_id'])) * hueristic_data[1]
 
         norm_score_columns = [c for c in reco.columns if c.endswith('norm_score')]
@@ -36,4 +32,4 @@ class HeuristicsWrapper:
         return (coll-coll.min())/(coll.max()-coll.min())
     
     def __repr__(self) -> str:
-        return self._heuristic_name2data.__repr__()
+        return self._hueristic_name2data.__repr__()

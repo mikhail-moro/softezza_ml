@@ -3,6 +3,7 @@ import typing as tp
 import ipywidgets as widgets
 import numpy as np
 import pandas as pd
+import os
 
 from IPython.display import display
 from ipywidgets.embed import embed_minimal_html
@@ -29,6 +30,8 @@ PROJECT_OPTIONS = ShowcaseOptions(
     item_df_columns=[
         "item_id",
         "title",
+        "watch_date",
+        "watch_ratio",
         "genres",
         #"countries",
         "release_year",
@@ -401,15 +404,13 @@ class Showcase(ShowcaseDataStorage):
             self._display_recos, {"user_name": user, "model_name": model}
         )
         if self.ground_truth is None:
-            display(
-                widgets.VBox(
-                    [user, user_id_out, viewed_out, model, model_name_out, recos_out]
-                )
+            self.mae = widgets.VBox(
+                [user, user_id_out, viewed_out, model, model_name_out, recos_out]
             )
+            display(self.mae)
         else:
             truth = widgets.interactive_output(self._display_truth, {"user_name": user})
-            display(
-                widgets.VBox(
+            self.mae = widgets.VBox(
                     [
                         user,
                         user_id_out,
@@ -420,7 +421,89 @@ class Showcase(ShowcaseDataStorage):
                         truth,
                     ]
                 )
+            display(self.mae)
+
+    def save_data(
+        self,
+        name: tp.Optional[str] = None,
+        showcase_folder_name: str = '/home/ml/softezza_ml/visualisation/showcase',
+        force_overwrite: tp.Optional[bool] = False,
+    ) -> None:
+        """
+        Save data for Showcase in csv format
+        Name can be generetated automatically if `date` in `full_recos` columns.
+        """
+        if name is None:
+            name = self._make_name_from_recos_date()
+        if not os.path.exists(showcase_folder_name):
+            os.mkdir(showcase_folder_name)
+        data_folder_name = os.path.join(showcase_folder_name, name)
+        if os.path.exists(data_folder_name):
+            if not force_overwrite:
+                raise ValueError(
+                    f"file {data_folder_name} already exists. Specify `force_overwrite=True` to overwrite"
+                )
+        else:
+            os.mkdir(data_folder_name)
+        self.interactions.to_csv(
+            os.path.join(data_folder_name, DATANAMES.Interactions), index=False
+        )
+        self.full_recos.to_csv(
+            os.path.join(data_folder_name, DATANAMES.Recos), index=False
+        )
+        if isinstance(self.item_data, pd.DataFrame):
+            self.item_data.to_csv(
+                os.path.join(data_folder_name, DATANAMES.Items), index=False
             )
+        else:
+            raise TypeError("Item data was not specified")
+
+        pd.DataFrame(
+            {"user_name": self.users_dict.keys(), "user_id": self.users_dict.values()}
+        ).to_csv(os.path.join(data_folder_name, DATANAMES.UsersDict), index=False)
+        # pd.Series(self.users_dict).to_csv(
+        #     os.path.join(data_folder_name, DATANAMES.UsersDict)
+        # )
+        if self.ground_truth is not None:
+            self.ground_truth.to_csv(
+                os.path.join(data_folder_name, DATANAMES.Truth), index=False
+            )
+
+    @classmethod
+    def load_data(
+        cls, name: str, auto_display: bool = True, reco_cols: tp.Optional[list] = None
+    ) -> "Showcase":
+        """
+        Load Showcase from data in csv format
+        """
+        data_folder_name = os.path.join('/home/ml/softezza_ml/visualisation/showcase', name)
+        interactions = pd.read_csv(
+            os.path.join(data_folder_name, DATANAMES.Interactions)
+        )
+        full_recos = pd.read_csv(os.path.join(data_folder_name, DATANAMES.Recos))
+        item_data = pd.read_csv(os.path.join(data_folder_name, DATANAMES.Items))
+        users_dict = pd.read_csv(
+            os.path.join(data_folder_name, DATANAMES.UsersDict),
+            header=None,
+            index_col=0,
+        )[1].to_dict()
+        ground_truth_path = os.path.join(data_folder_name, DATANAMES.Truth)
+        if os.path.exists(ground_truth_path):
+            ground_truth = pd.read_csv(ground_truth_path)
+        else:
+            ground_truth = None
+        showcase = Showcase(
+            interactions=interactions,
+            full_recos=full_recos,
+            users_dict=users_dict,
+            ground_truth=ground_truth,
+            item_data=item_data,
+            auto_display=auto_display,
+            reco_cols=reco_cols,
+        )
+        return showcase
+
+
 
     def get_widget(self) -> widgets.Widget:
         """
