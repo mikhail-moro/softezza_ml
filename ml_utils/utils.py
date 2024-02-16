@@ -1,5 +1,4 @@
 import pandas as pd
-import polars as pl
 import numpy as np
 import xgboost as xgb
 
@@ -10,9 +9,7 @@ import lightfm
 import lightfm.data
 import dataclasses
 
-from .inners._data import Data
-from .inners._sklearn import SklearnEstimatorLightFM
-
+from .data import Data
 from rectools.metrics import Recall
 from rectools.columns import Columns
 from rectools.models.base import ModelBase
@@ -50,7 +47,7 @@ def rectools_predict_user(
 
 def light_fm_predict_user(
     dataset: Data.LightFM_Dataset,
-    model: typing.Union[lightfm.LightFM, SklearnEstimatorLightFM],
+    model: lightfm.LightFM,
     user: int,
     n: int = 10
 ):
@@ -76,7 +73,7 @@ def light_fm_predict_user(
 def xgboost_predict_user(
     data: Data,
     mapper: Data.LightFM_DatasetMapping,
-    first_stage_model: typing.Union[lightfm.LightFM, SklearnEstimatorLightFM],
+    first_stage_model: lightfm.LightFM,
     second_stage_model: xgb.XGBRanker,
     user: int,
     n: int = 10
@@ -169,7 +166,7 @@ def get_users_for_test(
 
 def users_report(
     dataset: typing.Union[Data.LightFM_Dataset, 'Dataset'],
-    model: typing.Union[lightfm.LightFM, SklearnEstimatorLightFM, 'ModelBase'],
+    model: typing.Union[lightfm.LightFM, 'ModelBase'],
     users: _CachedUsers,
     n_items: int = 10,
     postfix: str = None, 
@@ -177,13 +174,10 @@ def users_report(
 ):
     if isinstance(model, lightfm.LightFM):
         pred_method = light_fm_predict_user
-    elif isinstance(model, SklearnEstimatorLightFM):
-        pred_method = light_fm_predict_user
     elif issubclass(model.__class__, ModelBase):
         pred_method = rectools_predict_user
     else:
         raise ValueError()
-
 
     def _pad_items(_items):
         if len(_items) < n_items:

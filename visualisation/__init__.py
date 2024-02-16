@@ -23,6 +23,7 @@ def bold_html_rounded(score: int) -> str:
 class ShowcaseOptions(BaseModel):
     item_df_columns: tp.List[str]
     item_df_renaming: tp.Dict[str, str]
+    inters_df_columns: tp.List[str]
     formatters: tp.Dict[str, tp.Callable]
 
 
@@ -30,12 +31,13 @@ PROJECT_OPTIONS = ShowcaseOptions(
     item_df_columns=[
         "item_id",
         "title",
-        "watch_date",
-        "watch_ratio",
         "genres",
-        #"countries",
         "release_year",
         "watched_in_all_time",
+    ],
+    inters_df_columns = [
+        "watch_date",
+        "watch_ratio"
     ],
     item_df_renaming={"watched_in_all_time": "watches", "item_id": "img"},
     formatters=dict(img=image_html, score=bold_html_rounded),
@@ -79,7 +81,7 @@ class ItemTypes:
 
     Viewed = "viewed"
     Recos = "recos"
-    Truth = "ground_truth"
+    Truth = "real watches"
 
 
 ITEMTYPES = ItemTypes()
@@ -255,6 +257,7 @@ class Showcase(ShowcaseDataStorage):
         items_list: np.ndarray,
         user_id: tp.Optional[int],
         model_name: tp.Optional[str],
+        items_type: ItemTypes
     ) -> str:
         """
         Returns html representation of info about items in `items_list` in string format
@@ -262,25 +265,26 @@ class Showcase(ShowcaseDataStorage):
         if len(items_list) > 0:
             if isinstance(self.item_data, pd.DataFrame):
                 item_df = pd.DataFrame(items_list, columns=[COLUMNS.Item])
-                item_df = item_df.join(
-                    self.item_data.set_index(COLUMNS.Item), on=COLUMNS.Item, how="left"
-                )
-                if user_id is not None and self.reco_cols is not None:
-                    # user_id is provided only for display with self.reco_cols to find model results for user in reco df
-                    user_recos = self.full_recos[
-                        (self.full_recos[COLUMNS.User] == user_id)
-                        & (self.full_recos[COLUMNS.Model] == model_name)
-                    ]
-                    user_recos.set_index(COLUMNS.Item, inplace=True)
-                    user_recos = user_recos[self.reco_cols]
-                    item_df = item_df.join(user_recos, on=COLUMNS.Item, how="left")
-                    item_df_columns = PROJECT_OPTIONS.item_df_columns + self.reco_cols
-                else:
-                    item_df_columns = PROJECT_OPTIONS.item_df_columns
+                item_df = item_df.join(self.item_data.set_index(COLUMNS.Item), on=COLUMNS.Item, how="left")
+                item_df_columns = PROJECT_OPTIONS.item_df_columns
             else:
                 raise TypeError("Item data was not specified")
+
             item_df = item_df[item_df_columns]
+
+            if items_type == ItemTypes.Viewed:
+                user_inters = self.interactions[self.interactions['user_id'] == user_id].drop(columns='user_id')
+                item_df = pd.merge(item_df, user_inters, how='left', on='item_id').fillna('?')
+
+            if items_type == ItemTypes.Truth:
+                user_inters = self.ground_truth[self.ground_truth['user_id'] == user_id].drop(columns='user_id')
+                item_df = pd.merge(item_df, user_inters, how='left', on='item_id').fillna('?')
+
+            if 'watch_date' in item_df.columns:
+                item_df['watch_date'] = pd.to_datetime(item_df['watch_date']).dt.date
+
             item_df.rename(columns=PROJECT_OPTIONS.item_df_renaming, inplace=True)
+            
             html_repr = (
                 item_df.to_html(
                     escape=False,
@@ -301,13 +305,14 @@ class Showcase(ShowcaseDataStorage):
         title: str,
         user_id: tp.Optional[int],
         model_name: tp.Optional[str],
+        items_type: ItemTypes
     ) -> widget_selectioncontainer.Tab:
         """
         Returns visual Tab with info about items in `items_list`
         """
         items_tab = widgets.Tab()
         items_tab.children = [
-            widgets.HTML(value=self._get_html_repr(items_list, user_id, model_name))
+            widgets.HTML(value=self._get_html_repr(items_list, user_id, model_name, items_type))
         ]
         items_tab.set_title(index=0, title=title)
         return items_tab
@@ -328,16 +333,17 @@ class Showcase(ShowcaseDataStorage):
             items_list = self.get_recos_for_user(user_id, model_name)
         else:
             raise ValueError(f"Unknown items_type: {items_type}")
+
         if self.reco_cols is not None and items_type == ITEMTYPES.Recos:
             display(
                 self._get_items_tab(
-                    items_list, title=items_type, user_id=user_id, model_name=model_name
+                    items_list, title=items_type, user_id=user_id, model_name=model_name, items_type=items_type
                 )
             )
         else:
             display(
                 self._get_items_tab(
-                    items_list, title=items_type, user_id=None, model_name=None
+                    items_list, title=items_type, user_id=user_id, model_name=None, items_type=items_type
                 )
             )
 
@@ -403,25 +409,35 @@ class Showcase(ShowcaseDataStorage):
         recos_out = widgets.interactive_output(
             self._display_recos, {"user_name": user, "model_name": model}
         )
-        if self.ground_truth is None:
+        
+        if self.ground_truth is None: 
             self.mae = widgets.VBox(
-                [user, user_id_out, viewed_out, model, model_name_out, recos_out]
+                [
+                    user,
+                    user_id_out,
+                    viewed_out,
+                    model,
+                    model_name_out,
+                    recos_out
+                ]
             )
-            display(self.mae)
         else:
             truth = widgets.interactive_output(self._display_truth, {"user_name": user})
+            
             self.mae = widgets.VBox(
-                    [
-                        user,
-                        user_id_out,
-                        viewed_out,
-                        model,
-                        model_name_out,
-                        recos_out,
-                        truth,
-                    ]
-                )
-            display(self.mae)
+                [
+                    user,
+                    user_id_out,
+                    viewed_out,
+                    model,
+                    model_name_out,
+                    widgets.HBox([recos_out, truth])
+                ]
+            )
+
+
+        display(self.mae)
+        
 
     def save_data(
         self,
@@ -566,3 +582,51 @@ class Showcase(ShowcaseDataStorage):
             return name
         raise ValueError("Name not specified and `date` not in `full_recos.columns`")
  
+
+def visualise_models(
+    models_recos: tp.Dict[str, pd.DataFrame],
+    train_interactions: pd.DataFrame,
+    test_interactions: pd.DataFrame,
+    test_users: tp.Any,
+    test_items: tp.Any,
+    mappers_dir: str
+):
+    item_id2meta = pd.read_csv(os.path.join(mappers_dir, 'item_id2meta.csv')).set_index('item_id', drop=True)
+    item_id2title = pd.read_csv(os.path.join(mappers_dir, 'item_id2title.csv')).set_index('item_id', drop=True)['title']
+
+    named_recos = []
+
+    for model_name, recos in models_recos.items():
+        recos['model_name'] = model_name
+        named_recos.append(recos)
+
+
+    interactions = []
+
+    for user_id, history in test_users.users_histories.items():
+        hist_data = pd.DataFrame({'item_id': history})
+        hist_data['user_id'] = user_id
+        interactions.append(hist_data)
+
+
+    vis_interactions = pd.concat(interactions)
+    vis_interactions['watch_date'] = pd.merge(vis_interactions[['user_id', 'item_id']], train_interactions[['user_id', 'item_id', 'timestamp']], on=['user_id', 'item_id'], how='left')['timestamp']
+    vis_interactions['watch_ratio'] = pd.merge(vis_interactions[['user_id', 'item_id']], train_interactions[['user_id', 'item_id', 'weight']], on=['user_id', 'item_id'], how='left')['weight']
+    vis_dict = dict(zip([f"user_{i}" for i in range(1, 11)], test_users.users_idx))
+
+    vis_recos = pd.concat(named_recos, ignore_index=True)
+    vis_items_data = pd.DataFrame({'item_id': test_items})
+    vis_items_data['title'] = vis_items_data['item_id'].apply(lambda iid: item_id2title.loc[iid])
+    vis_items_data['watched_in_all_time'] = vis_items_data['item_id'].apply(lambda iid: item_id2meta.loc[iid, 'num_views'])
+    vis_items_data['release_year'] = vis_items_data['item_id'].apply(lambda iid: item_id2meta.loc[iid, 'year'])
+    vis_items_data['genres'] = vis_items_data['item_id'].apply(lambda iid: item_id2meta.loc[iid, 'genres'])
+
+
+    Showcase(
+        interactions=vis_interactions,
+        full_recos=vis_recos,
+        users_dict=vis_dict,
+        item_data=vis_items_data,
+        convert_ids_to_int=False,
+        ground_truth=test_interactions.rename(columns={'timestamp': 'watch_date', 'weight': 'watch_ratio'})
+    )

@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="8bee58ca-95d6-46f3-aad4-234244263964" name="Changes" comment="Lil fixes">
+      <change afterPath="$PROJECT_DIR$/ml_utils/data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/ml_utils/rerank/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.vscode/launch.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data_analysis.ipynb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/heuristics/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/heuristics/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/ml_utils/rerank/base.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/heuristics/cosine.py" beforeDir="false" afterPath="$PROJECT_DIR$/ml_utils/rerank/cosine.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/heuristics/simple.py" beforeDir="false" afterPath="$PROJECT_DIR$/ml_utils/rerank/simple.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/knn_grid_analysis.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/knn_grid_analysis.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/knn_tuning.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/knn_tuning.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/knn_vis_analysis.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/knn_vis_analysis.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lightfm_grid_analysis.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/lightfm_grid_analysis.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lightfm_grid_report_2.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/lightfm_tuning.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/lightfm_tuning.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lightfm_vis_analysis.ipynb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/reports/grid_report_bm25_2.csv" beforeDir="false" afterPath="$PROJECT_DIR$/reports/grid_report_bm25_2.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/reports/grid_report_bm25_3.csv" beforeDir="false" afterPath="$PROJECT_DIR$/reports/grid_report_bm25_3.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/reports/grid_report_bm25_4.csv" beforeDir="false" afterPath="$PROJECT_DIR$/reports/grid_report_bm25_4.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/task.ipynb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/inners/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/inners/_data.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/inners/_rectools.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/inners/_sklearn.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/visualisation/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/visualisation/__init__.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
+  </component>
+  <component name="ProjectId" id="2cMc9CLCMOvqMhW5989dUVm3qXe" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\yahry\PycharmProjects\softezza_ml\ml_utils" />
+      <recent name="C:\Users\yahry\PycharmProjects\softezza_ml\rerank" />
+      <recent name="C:\Users\yahry\PycharmProjects\softezza_ml\rerank\heuristic" />
+    </key>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="8bee58ca-95d6-46f3-aad4-234244263964" name="Changes" comment="" />
+      <created>1707924735106</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1707924735106</updated>
+    </task>
+    <task id="LOCAL-00001" summary="Lil fixes">
+      <created>1707924891419</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1707924891419</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
+    <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Lil fixes" />
+    <option name="LAST_COMMIT_MESSAGE" value="Lil fixes" />
+  </component>
+</project>

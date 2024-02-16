@@ -20,7 +20,6 @@ if typing.TYPE_CHECKING:
     from scipy.sparse import coo_matrix
 
 
-
 class Experiment(enum.Enum):
     LIGHT_FM = 0
     XGBOOST = 1
@@ -29,7 +28,8 @@ class Experiment(enum.Enum):
 class Data:
     LightFM_Dataset = collections.namedtuple(
         'LightFM_Dataset',
-        ['train_interactions', 'test_interactions', 'user_features', 'item_features', 'weights', 'lightfm_dataset', 'mapping']
+        ['train_interactions', 'test_interactions', 'user_features', 'item_features', 'weights', 'lightfm_dataset',
+         'mapping']
     )
     LightFM_DatasetMapping = collections.namedtuple(
         'LightFM_DatasetMapping',
@@ -45,19 +45,22 @@ class Data:
     all_items: np.ndarray
     all_features: np.ndarray
 
-
     def save_for_fast_load(self, save_dir: str):
         self.train_interactions.to_csv(os.path.join(save_dir, 'train_interactions.csv'), index=False)
         self.test_interactions.to_csv(os.path.join(save_dir, 'test_interactions.csv'), index=False)
-        
+
         if self.user_features is not None:
             self.user_features.to_csv(os.path.join(save_dir, 'user_features.csv'), index=False)
-        
+
         if self.item_features is not None:
             self.item_features.to_csv(os.path.join(save_dir, 'item_features.csv'), index=False)
 
     @classmethod
     def fast_load(cls, load_dir: str):
+        """
+        Fast load already preprocessed and saved with Data.save_for_fast_load() method data
+        """
+
         train_interactions = pd.read_csv(os.path.join(load_dir, 'train_interactions.csv'))
         test_interactions = pd.read_csv(os.path.join(load_dir, 'test_interactions.csv'))
 
@@ -78,7 +81,6 @@ class Data:
             item_features=item_features
         )
 
-
     def __init__(
             self,
             train_interactions: typing.Union[pd.DataFrame, typing.Tuple[pd.DataFrame, pd.DataFrame]],
@@ -92,7 +94,7 @@ class Data:
         self.item_features = item_features
 
         self.all_features = []
-        
+
         if self.user_features is not None:
             self.all_features += [c for c in user_features.columns if c != 'user_id']
 
@@ -137,7 +139,7 @@ class Data:
         scalar_values_columns = scalar_values_columns if scalar_values_columns is not None else []
 
         def _parse_feature_names(column: str, _data: pd.DataFrame):
-            
+
             if column in drop_features:
                 return []
             if column in scalar_values_columns:
@@ -182,7 +184,7 @@ class Data:
         return collections.namedtuple(
             'LightFM_Features',
             ['user_features', 'item_features', 'user_labels', 'item_labels']
-        ) (
+        )(
             user_features=tuple([(i, _parse_feature_row(r)) for i, r in user_features.iterrows()]),
             item_features=tuple([(i, _parse_feature_row(r)) for i, r in item_features.iterrows()]),
             user_labels=user_labels,
@@ -190,8 +192,8 @@ class Data:
         )
 
     def set_xgboost_features(
-        self,
-        interactions: pd.DataFrame
+            self,
+            interactions: pd.DataFrame
     ) -> pd.DataFrame:
         interactions = pd.merge(interactions, self.user_features, on='user_id', how='inner')
         interactions = pd.merge(interactions, self.item_features, on='item_id', how='inner')
@@ -199,11 +201,12 @@ class Data:
         return interactions
 
     def get_rectools_dataset(
-        self,
-        item_features: pd.DataFrame = None,
-        user_features: pd.DataFrame = None
+            self,
+            item_features: pd.DataFrame = None,
+            user_features: pd.DataFrame = None
     ) -> Dataset:
-        interactions_cols = [rectools.Columns.User, rectools.Columns.Item, rectools.Columns.Weight, rectools.Columns.Datetime]
+        interactions_cols = [rectools.Columns.User, rectools.Columns.Item, rectools.Columns.Weight,
+                             rectools.Columns.Datetime]
 
         train = self.train_interactions.rename(columns={
             'user_id': rectools.Columns.User,
@@ -222,24 +225,26 @@ class Data:
             train = train[train['item_id'].isin(items)]
             train_item_features = item_features[item_features['item_id'].isin(items)]
 
-        user_id_map=IdMap.from_values(train[rectools.Columns.User].values)
-        item_id_map=IdMap.from_values(train[rectools.Columns.Item].values)
+        user_id_map = IdMap.from_values(train[rectools.Columns.User].values)
+        item_id_map = IdMap.from_values(train[rectools.Columns.Item].values)
         train_interactions = Interactions.from_raw(train, user_id_map, item_id_map)
-  
+
         train_dataset = Dataset(
             user_id_map, item_id_map, train_interactions,
-            user_features=DenseFeatures.from_dataframe(train_user_features.drop_duplicates('user_id'), user_id_map, 'user_id') if user_features is not None else None,
-            item_features=DenseFeatures.from_dataframe(train_item_features.drop_duplicates('item_id'), item_id_map, 'item_id') if item_features is not None else None
+            user_features=DenseFeatures.from_dataframe(train_user_features.drop_duplicates('user_id'), user_id_map,
+                                                       'user_id') if user_features is not None else None,
+            item_features=DenseFeatures.from_dataframe(train_item_features.drop_duplicates('item_id'), item_id_map,
+                                                       'item_id') if item_features is not None else None
         )
 
         return train_dataset
 
     def get_lightfm_dataset(
-        self,
-        with_features: bool = True,
-        drop_features: list = None,
-        list_values_columns: list = None,
-        scalar_values_columns: list = None
+            self,
+            with_features: bool = True,
+            drop_features: list = None,
+            list_values_columns: list = None,
+            scalar_values_columns: list = None
     ) -> lightfm.data.Dataset:
         if with_features:
             features = self.get_lightfm_features(drop_features, list_values_columns, scalar_values_columns)
@@ -283,7 +288,7 @@ class Data:
             item_features=item_features if item_features else None,
             weights=weights,
             lightfm_dataset=lightfm_dataset,
-            
+
             mapping=self.LightFM_DatasetMapping(
                 ext_uid2int_uid=ext_uid2int_uid,
                 int_uid2ext_uid=int_uid2ext_uid,
@@ -299,7 +304,6 @@ class Data:
         del self.item_features
         del self.all_users
         del self.all_items
-
 
 
 # Filters
@@ -329,7 +333,7 @@ class MinNumInteractionsFilter(FilterStrategy):
 
         if self.min_user_ints:
             data = data.filter(data['user_id'].map_elements(lambda x: user_id2num_inters[x] > self.min_user_ints))
-        
+
         if self.min_item_ints:
             data = data.filter(data['item_id'].map_elements(lambda x: item_id2num_inters[x] > self.min_item_ints))
 
@@ -342,11 +346,10 @@ class OnlyLastInteractionsFilter(FilterStrategy):
     n_last: int
 
     def filter(self, data: pl.DataFrame) -> pl.DataFrame:
-        data = data.with_columns(index=np.arange(len(data)))
+        data = data.with_columns(index=list(np.arange(len(data))))
         data = data.group_by(self.filter_column)
         data = data.map_groups(lambda g: g.sort('timestamp', descending=True).head(self.n_last))
         return data
-
 
 
 # Splitters
@@ -360,7 +363,7 @@ class SplitStrategy(abc.ABC):
 
 
 class NoSplit(SplitStrategy):
-    def split(self, data: pl.DataFrame) -> typing.Tuple[pl.DataFrame,]:
+    def split(self, data: pl.DataFrame) -> typing.Tuple[pl.DataFrame, ...]:
         return data, pl.DataFrame(schema=data.schema), pl.DataFrame(schema=data.schema)
 
 
@@ -379,7 +382,7 @@ class TimeSortSplit(SplitStrategy):
             fs_interactions = self.num_interactions * (1 - first_stage_train_split)
             ss_interactions = self.num_interactions * (1 - first_stage_train_split - second_stage_train_split)
             data = data.sort('timestamp', descending=True)
-            data = data.with_columns(index=np.arange(len(data)))
+            data = data.with_columns(index=list(np.arange(len(data))))
 
             train_1 = data.filter(
                 (pl.col('index') < self.num_interactions)
@@ -400,10 +403,10 @@ class TimeSortSplit(SplitStrategy):
             return train_1, train_2, test
         else:
             train_split = self.splits[0]
-            
+
             train_interactions = self.num_interactions * (1 - train_split)
             data = data.sort('timestamp', descending=True)
-            data = data.with_columns(index=np.arange(len(data)))
+            data = data.with_columns(index=list(np.arange(len(data))))
 
             train = data.filter(
                 (pl.col('index') < self.num_interactions)
@@ -426,7 +429,7 @@ class RandomSplit(SplitStrategy):
 
     def split(self, data: pl.DataFrame) -> tuple:
         self.num_interactions = len(data) if self.num_interactions == 'all' else self.num_interactions
-        
+
         if len(self.splits) == 3:
             fs_interactions = self.num_interactions * (1 - self.first_stage_train_split)
             ss_interactions = self.num_interactions * (1 - self.first_stage_train_split - self.second_stage_train_split)
@@ -494,13 +497,14 @@ class NumViewsBasedWeight(WeightStrategy):
         if isinstance(self.max_num_views, float):
             self.max_num_views = int(num_views['count'].quantile(self.max_num_views))
 
-        num_views = num_views.with_columns(count=num_views['count'].map_elements(lambda x: np.min(self.max_num_views, x)))
-        max_num_views = num_views['count'].max()
-        
         num_views = num_views.with_columns(
-            weigth=np.clip(num_views['count']/max_num_views, a_min=self.clip[0], a_max=self.clip[1])
+            count=num_views['count'].map_elements(lambda x: np.min(self.max_num_views, x)))
+        max_num_views = num_views['count'].max()
+
+        num_views = num_views.with_columns(
+            weigth=np.clip(num_views['count'] / max_num_views, a_min=self.clip[0], a_max=self.clip[1])
         ).drop('count')
-        
+
         return data.join(num_views, on='item_id', how='left')['weight']
 
 
@@ -512,10 +516,12 @@ class ViewTimeBasedWeight(WeightStrategy):
     def get_weights(self, data: pl.DataFrame) -> pl.Series:
         timestamps = data[['user_id', 'item_id', 'timestamp']].sort('timestamp', descending=True)
         timestamps = timestamps.with_columns(
-            weight=timestamps.group_by(['user_id', 'item_id']).agg(pl.col('timestamp').cum_count().map_elements(lambda x: np.max(self.n_last, x)))
+            weight=timestamps.group_by(['user_id', 'item_id']).agg(
+                pl.col('timestamp').cum_count().map_elements(lambda x: np.max(self.n_last, x))
+            )
         )
         timestamps = timestamps.with_columns(
-            weight=timestamps.group_by(['user_id', 'item_id']).map_groups(lambda g: g['weight']/g['weight'].max())
+            weight=timestamps.group_by(['user_id', 'item_id']).map_groups(lambda g: g['weight'] / g['weight'].max())
         )
 
         timestamps = timestamps.with_columns(
@@ -537,35 +543,56 @@ class ViewRatioBasedWeight(WeightStrategy):
 
 @dataclasses.dataclass
 class FeaturesConfig:
+    """
+    Parameters:
+    ----------
+
+
+    features :
+        List of features for use (rank, year, mppa, genres, runtime, device, account_type, lifetime) or `all`
+
+    use_labels :
+        Set `True` if using classic `lightfm.data.Dataset`
+    """
+
+    features: typing.Union[typing.Iterable[str], typing.Literal['all']] = 'all'
     use_labels: bool = False
 
+    _dtypes = {
+        'item_id': pl.String,
+        'rank': pl.String,
+        'year': pl.String,
+        'mppa': pl.String,
+        'genres': pl.String,
+        'runtime': pl.String
+    }
+
     def get_features(self) -> typing.Tuple[pl.DataFrame, pl.DataFrame]:
+        if self.features == 'all':
+            self.features = ['rank', 'year', 'mppa', 'genres', 'runtime', 'device', 'account_type', 'lifetime']
+
         if self.use_labels:
             item_features = pl.read_csv(
                 os.path.join(os.environ['DIR'], 'data/item_features.csv'),
-                dtypes={
-                    'item_id': pl.String,
-                    'rank': pl.String,
-                    'year': pl.String,
-                    'mppa': pl.String,
-                    'genres': pl.String,
-                    'runtime': pl.String
-                }
+                dtypes={k: self._dtypes[k] for k in self._dtypes if k in self.features},
+                columns=['item_id'] + [c for c in ['rank', 'year', 'mppa', 'genres', 'runtime'] if c in self.features]
             )
             user_features = pl.read_csv(
                 os.path.join(os.environ['DIR'], 'data/user_features.csv'),
-                columns=['user_id', 'device', 'account_type', 'lifetime']
+                columns=['user_id'] + [c for c in ['device', 'account_type', 'lifetime'] if c in self.features]
             )
-            
-            parse_genres = lambda genres: genres.replace('"', '').replace("'", '').replace(']', '').replace('[','').replace(' ','').split(',')
-            
+
+            parse_genres = lambda genres: genres.replace('"', '').replace("'", '').replace(']', '').replace('[',
+                                                                                                            '').replace(
+                ' ', '').split(',')
+
             item_features = item_features.with_columns(
                 genres=item_features['genres'].map_elements(parse_genres)
             )
         else:
             item_features = pl.read_csv(os.path.join(os.environ['DIR'], 'data/item_features_bin.csv'))
             user_features = pl.read_csv(os.path.join(os.environ['DIR'], 'data/user_features_bin.csv'))
-        
+
         return user_features, item_features
 
 
@@ -587,13 +614,13 @@ class DataConfig:
         Data splitting config.
 
     filter_strategy :
-        Data filtering config or sequence of configs. 
-        
-        If sequense was passed, filters will be compute sequentially - from first element of sequense to last. 
+        Data filtering config or sequence of configs.
+
+        If sequense was passed, filters will be compute sequentially - from first element of sequense to last.
 
     weight_strategy :
         Weight computing config or iterable of tuple pairs (`WeightStrategy`, `weight`), where `weight` is float value in range 0..1.
-        
+
         If dict was passed, final weight will be computing with next formula:
             `final_weight` = `WeightStrategyResult[0]` * `weight[0]` + ... + `WeightStrategyResult[n]` * `weight[n]`.
 
@@ -659,7 +686,7 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
         test = test.join(all_items, how='inner', on='item_id').to_pandas()
 
         train_1['weight'] = weights.to_numpy()
-        train=(train_1, train_2)
+        train = (train_1, train_2)
 
         if verbose_lens:
             print(
@@ -681,10 +708,6 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
 
         train = train.to_pandas()
         test = splits[1].to_pandas()
-
-        item_id2num_inters = train['item_id'].value_counts()
-        item_id2num_inters = dict(zip(item_id2num_inters.index, item_id2num_inters.values))
-
         train['weight'] = weights.to_numpy()
 
         if verbose_lens:
@@ -692,8 +715,8 @@ def load_data(config: DataConfig, verbose_lens: bool = True) -> Data:
                 "Data after filter:\n" +
                 f"Len of train interactions with period [{train.tail(1)['timestamp'].values} / {train.head(1)['timestamp'].values}] - {len(train)}\n" +
                 f"Len of test interactions with period [{test.tail(1)['timestamp'].values} / {test.head(1)['timestamp'].values}] - {len(test)}\n" +
-                f"Num of uniq users {len(all_users)}" + 
-                f"Num of uniq items {len(all_items)}" 
+                f"Num of uniq users {len(all_users)}" +
+                f"Num of uniq items {len(all_items)}"
             )
 
     return Data(
