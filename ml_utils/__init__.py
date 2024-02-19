@@ -20,7 +20,7 @@ from .data import (
     load_data
 )
 
-from rerank import (
+from .rerank import (
     Reranker,
 
     Ranker,
