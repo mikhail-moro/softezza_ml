@@ -1,15 +1,15 @@
-from base import (
+from .base import (
     Ranker,
     Heuristic,
     XGBoostRanker
 )
 
-from cosine import (
+from .cosine import (
     Cosine,
     # TimeDelayedWeightedCosine
 )
 
-from simple import (
+from .simple import (
     ScalarScaleDistance
 )
 
