@@ -559,12 +559,12 @@ class FeaturesConfig:
     use_labels: bool = False
 
     _dtypes = {
-        'item_id': pl.String,
-        'rank': pl.String,
-        'year': pl.String,
-        'mppa': pl.String,
-        'genres': pl.String,
-        'runtime': pl.String
+        'item_id': pl.Utf8,
+        'rank': pl.Utf8,
+        'year': pl.Utf8,
+        'mppa': pl.Utf8,
+        'genres': pl.Utf8,
+        'runtime': pl.Utf8
     }
 
     def get_features(self) -> typing.Tuple[pl.DataFrame, pl.DataFrame]:
